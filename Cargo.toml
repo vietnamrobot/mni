@@ -1,0 +1,71 @@
+[package]
+name = "mni"
+version = "0.1.0"
+edition = "2024"
+authors = ["Nick Paterno <nick@epistates>"]
+license = "MIT"
+description = "A world-class minifier for JavaScript, CSS, and JSON written in Rust"
+repository = "https://github.com/epistates/mni"
+keywords = ["minifier", "minify", "javascript", "css", "optimizer"]
+categories = ["development-tools", "parser-implementations"]
+
+[lib]
+name = "mni"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mni"
+path = "src/main.rs"
+
+[dependencies]
+# JavaScript minification - Production-ready, powers Next.js/Deno/Vercel
+swc_core = { version = "47.0", features = [
+    "ecma_ast",
+    "ecma_minifier",
+    "ecma_parser",
+    "ecma_transforms",
+    "ecma_codegen",
+    "ecma_visit",
+    "common"
+] }
+
+# CSS minification - 100x faster than cssnano, powers Parcel
+lightningcss = { version = "1.0.0-alpha.68", features = ["visitor", "sourcemap"] }
+
+# Source maps - Battle-tested by Sentry
+sourcemap = "9.0"
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+anyhow = "1.0"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Performance - parallel processing
+rayon = "1.10"
+
+# Hashing for symbol tables
+ahash = "0.8"
+
+# Utilities
+once_cell = "1.20"
+
+[dev-dependencies]
+criterion = "0.5"
+insta = "1.40"
+pretty_assertions = "1.4"
+
+[[bench]]
+name = "minify_bench"
+harness = false
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+strip = true
+
+[profile.bench]
+inherits = "release"
