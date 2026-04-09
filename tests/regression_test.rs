@@ -110,6 +110,51 @@ fn test_mangle_with_safe_compression() {
     assert!(reparse.is_ok());
 }
 
+/// Regression test for issue #1: `conditionals:true` creates invalid `&&` assignments
+/// Input: `if (cond) x = y;` should NOT produce `cond&&x=y;` (invalid JS)
+/// It should produce `cond&&(x=y)` or keep the if-statement form.
+#[test]
+fn test_conditional_assignment_produces_valid_js() {
+    let code = r#"let a = true; let b = 2.5; var c; if (a) c = b;"#;
+
+    let options = MinifyOptions::default();
+    let minifier = Minifier::new(options);
+    let result = minifier.minify_js(code).unwrap();
+
+    // The output must be re-parseable as valid JavaScript
+    let reparse = minifier.minify_js(&result.code);
+    assert!(
+        reparse.is_ok(),
+        "Minified output should be valid JS, got: {}",
+        result.code
+    );
+
+    // Specifically: `&&c=b` without parens is invalid — the assignment must be wrapped
+    assert!(
+        !result.code.contains("&&c=b"),
+        "Should not produce bare assignment after &&, got: {}",
+        result.code
+    );
+}
+
+/// Regression test for issue #1 variant: assignment in || expression
+#[test]
+fn test_conditional_or_assignment_produces_valid_js() {
+    let code = r#"let a = false; let b = 2.5; var c; if (!a) c = b;"#;
+
+    let options = MinifyOptions::default();
+    let minifier = Minifier::new(options);
+    let result = minifier.minify_js(code).unwrap();
+
+    // The output must be re-parseable as valid JavaScript
+    let reparse = minifier.minify_js(&result.code);
+    assert!(
+        reparse.is_ok(),
+        "Minified output should be valid JS, got: {}",
+        result.code
+    );
+}
+
 /// Test conditional optimization doesn't break
 #[test]
 fn test_conditional_optimization_safe() {

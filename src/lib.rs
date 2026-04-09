@@ -215,14 +215,18 @@ enum Format {
 fn detect_format(source: &str, filename: Option<&str>) -> Format {
     // Try filename extension first
     if let Some(name) = filename
-        && let Some(ext) = std::path::Path::new(name).extension() {
+        && let Some(ext) = std::path::Path::new(name).extension()
+    {
         if ext.eq_ignore_ascii_case("css") {
             return Format::CSS;
         }
         if ext.eq_ignore_ascii_case("json") {
             return Format::JSON;
         }
-        if ext.eq_ignore_ascii_case("js") || ext.eq_ignore_ascii_case("mjs") || ext.eq_ignore_ascii_case("cjs") {
+        if ext.eq_ignore_ascii_case("js")
+            || ext.eq_ignore_ascii_case("mjs")
+            || ext.eq_ignore_ascii_case("cjs")
+        {
             return Format::JavaScript;
         }
     }

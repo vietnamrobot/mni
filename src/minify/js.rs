@@ -13,7 +13,7 @@ use swc_core::{
             CompressOptions, ExtraOptions, MangleOptions, MinifyOptions as SwcMinifyOptions,
         },
         parser::{Parser, StringInput, Syntax, TsSyntax, lexer::Lexer},
-        transforms::base::resolver,
+        transforms::base::{fixer::fixer, resolver},
         visit::VisitMutWith,
     },
 };
@@ -70,11 +70,10 @@ pub fn minify(source: &str, options: &MinifyOptions) -> Result<MinifyResult> {
                         hoist_fns: options.compress_options.hoist_funs,
                         hoist_vars: options.compress_options.hoist_vars,
 
-                        // Disable aggressive optimizations that can produce invalid code
-                        // See: https://github.com/swc-project/swc/issues/...
-                        inline: 0, // Disable inlining to prevent invalid AST transformations
-                        sequences: 0, // Disable comma sequences that can break assignments
-                        collapse_vars: false, // Disable variable collapse (causes the bug)
+                        // Disable aggressive optimizations known to produce invalid code
+                        // even after the fixer pass
+                        inline: 0,
+                        collapse_vars: false,
 
                         // Keep defaults for others
                         ..Default::default()
@@ -96,7 +95,7 @@ pub fn minify(source: &str, options: &MinifyOptions) -> Result<MinifyResult> {
                 ..Default::default()
             };
 
-            swc_core::ecma::minifier::optimize(
+            let mut program = swc_core::ecma::minifier::optimize(
                 program,
                 cm.clone(),
                 None,
@@ -107,7 +106,11 @@ pub fn minify(source: &str, options: &MinifyOptions) -> Result<MinifyResult> {
                     top_level_mark,
                     mangle_name_cache: Option::default(),
                 },
-            )
+            );
+
+            // fixer corrects parenthesization after minifier transforms
+            program.visit_mut_with(&mut fixer(None));
+            program
         } else {
             program
         }

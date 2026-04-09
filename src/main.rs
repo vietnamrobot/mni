@@ -144,7 +144,8 @@ fn main() -> Result<()> {
 
     // Write source map if requested
     if cli.source_map
-        && let Some(map) = &result.map {
+        && let Some(map) = &result.map
+    {
         let map_path = match &cli.output {
             Some(path) if path.to_str() != Some("-") => {
                 let mut map_path = path.clone();
