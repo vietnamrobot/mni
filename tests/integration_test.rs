@@ -134,6 +134,147 @@ fn test_constant_folding() {
 }
 
 #[test]
+fn test_html_minification_strips_whitespace_and_comments() {
+    let html = r#"<!DOCTYPE html>
+<html>
+    <head>
+        <title>Hello</title>
+        <!-- this comment should go -->
+    </head>
+    <body>
+        <p>   hello   world   </p>
+    </body>
+</html>
+"#;
+
+    let options = MinifyOptions::default();
+    let minifier = Minifier::new(options);
+    let result = minifier.minify_html(html).unwrap();
+
+    assert!(result.stats.minified_size < result.stats.original_size);
+    assert!(!result.code.contains("this comment should go"));
+    assert!(result.code.contains("Hello"));
+    assert!(result.code.contains("hello"));
+    assert!(result.code.contains("world"));
+}
+
+#[test]
+fn test_html_minification_inlines_js_and_css() {
+    let html = r#"<!DOCTYPE html>
+<html>
+    <head>
+        <style>
+            body {
+                color: #ffffff;
+                margin: 0px;
+            }
+        </style>
+    </head>
+    <body>
+        <script>
+            const   x   =   1   +   2;
+            console.log(x);
+        </script>
+    </body>
+</html>
+"#;
+
+    let options = MinifyOptions::default();
+    let minifier = Minifier::new(options);
+    let result = minifier.minify_html(html).unwrap();
+
+    // Inline CSS should be minified (color collapsed to #fff and 0px → 0).
+    assert!(result.code.contains("#fff"));
+    assert!(!result.code.contains("0px"));
+    // Inline JS should be minified (whitespace between tokens removed).
+    assert!(!result.code.contains("const   x"));
+}
+
+#[test]
+fn test_svg_minification_strips_whitespace_and_comments() {
+    let svg = r##"<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+    <!-- this comment should go -->
+    <title>  My Icon  </title>
+    <rect x="10" y="10" width="80" height="80" fill="#ffffff"/>
+    <circle cx="50" cy="50" r="30" fill="red"/>
+</svg>
+"##;
+
+    let options = MinifyOptions::default();
+    let minifier = Minifier::new(options);
+    let result = minifier.minify_svg(svg).unwrap();
+
+    assert!(result.stats.minified_size < result.stats.original_size);
+    assert!(!result.code.contains("this comment should go"));
+    // SVG root element preserved.
+    assert!(result.code.contains("<svg"));
+    // Drawn elements survive — oxvg may rewrite <rect> as <path> (a semantic-
+    // preserving shape conversion), so accept either, but the circle should
+    // stay as a circle under the safe preset.
+    assert!(result.code.contains("<rect") || result.code.contains("<path"));
+    assert!(result.code.contains("<circle"));
+    // Color minification should apply: #ffffff → #fff.
+    assert!(!result.code.contains("#ffffff"));
+    assert!(result.code.contains("#fff"));
+}
+
+#[test]
+fn test_svg_minification_preserves_valid_xml_roundtrip() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+    <path d="M12 2 L22 22 L2 22 Z" fill="blue"/>
+</svg>"#;
+
+    let options = MinifyOptions::default();
+    let minifier = Minifier::new(options);
+    let result = minifier.minify_svg(svg).unwrap();
+
+    // Re-parse to prove the output is well-formed XML.
+    let doc = roxmltree::Document::parse(&result.code)
+        .expect("minified SVG output must re-parse as valid XML");
+    let root = doc.root_element();
+    assert_eq!(root.tag_name().name(), "svg");
+
+    // The <path> element must survive with non-empty `d` data.
+    let path = root
+        .descendants()
+        .find(|n| n.has_tag_name("path"))
+        .expect("path element should be preserved");
+    let d = path
+        .attribute("d")
+        .expect("path must keep its `d` attribute");
+    assert!(!d.is_empty(), "path data was emptied");
+    // Path data must still start with a moveto command (M or m).
+    assert!(
+        d.trim_start().starts_with('M') || d.trim_start().starts_with('m'),
+        "unexpected path data: {d}"
+    );
+}
+
+#[test]
+fn test_auto_detect_svg_by_extension() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>"#;
+    let options = MinifyOptions::default();
+    let minifier = Minifier::new(options);
+    let result = minifier.minify_auto(svg, Some("icon.svg")).unwrap();
+
+    assert!(result.code.contains("<svg"));
+    // Shape survives in some form (rect or converted path).
+    assert!(result.code.contains("<rect") || result.code.contains("<path"));
+}
+
+#[test]
+fn test_auto_detect_html() {
+    let html = "<!DOCTYPE html><html><body><h1>  Title  </h1></body></html>";
+    let options = MinifyOptions::default();
+    let minifier = Minifier::new(options);
+    let result = minifier.minify_auto(html, Some("page.html")).unwrap();
+
+    assert!(result.code.contains("<h1>"));
+    assert!(result.stats.minified_size < result.stats.original_size);
+}
+
+#[test]
 fn test_dead_code_elimination() {
     let code = r#"
         if (false) {

@@ -101,7 +101,8 @@ pub struct MinifyOptions {
     /// Allow mangling of top-level scope identifiers (default: false)
     pub toplevel: bool,
 
-    /// Enable parallel processing when minifying multiple files (default: true)
+    /// Reserved for future parallel multi-file processing. Currently a no-op —
+    /// setting this flag has no effect until batch minification lands.
     pub parallel: bool,
 }
 

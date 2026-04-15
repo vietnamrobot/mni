@@ -13,8 +13,7 @@
 //! - **Blazing Fast**: SWC + `LightningCSS` performance
 //! - **High Compression**: Terser-level minification quality
 //! - **Multi-format**: JavaScript (ES5-ESNext), CSS, JSON
-//! - **Source Maps**: Full source map support
-//! - **Parallel**: Multi-threaded processing with rayon
+//! - **Source Maps**: Source map generation for JS (via SWC) and CSS (via `LightningCSS`)
 //!
 //! ## Example
 //!
@@ -128,7 +127,17 @@ impl Minifier {
     /// assert!(result.code.len() < 16);
     /// ```
     pub fn minify_js(&self, source: &str) -> Result<MinifyResult> {
-        minify::js::minify(source, &self.options)
+        minify::js::minify(source, None, &self.options)
+    }
+
+    /// Minifies JavaScript code using SWC, passing through a filename so source
+    /// maps (when enabled) reference the real input path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the JavaScript code cannot be parsed or if minification fails.
+    pub fn minify_js_with_name(&self, source: &str, filename: &str) -> Result<MinifyResult> {
+        minify::js::minify(source, Some(filename), &self.options)
     }
 
     /// Minifies CSS code using `LightningCSS`.
@@ -149,7 +158,17 @@ impl Minifier {
     /// assert!(result.code.contains("#fff"));
     /// ```
     pub fn minify_css(&self, source: &str) -> Result<MinifyResult> {
-        minify::css::minify(source, &self.options)
+        minify::css::minify(source, None, &self.options)
+    }
+
+    /// Minifies CSS code using `LightningCSS`, passing through a filename so
+    /// source maps (when enabled) reference the real input path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the CSS code cannot be parsed or if minification fails.
+    pub fn minify_css_with_name(&self, source: &str, filename: &str) -> Result<MinifyResult> {
+        minify::css::minify(source, Some(filename), &self.options)
     }
 
     /// Minifies JSON code using `serde_json`.
@@ -171,6 +190,31 @@ impl Minifier {
     /// ```
     pub fn minify_json(&self, source: &str) -> Result<MinifyResult> {
         minify::json::minify(source, &self.options)
+    }
+
+    /// Minifies HTML using `minify-html`.
+    ///
+    /// Inline `<style>` and `<script>` blocks are minified via `LightningCSS`
+    /// and `minify-js` respectively. Source maps are not supported for HTML.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `minify-html` produces non-UTF-8 output.
+    pub fn minify_html(&self, source: &str) -> Result<MinifyResult> {
+        minify::html::minify(source, &self.options)
+    }
+
+    /// Minifies SVG using `oxvg` (a Rust port of SVGO).
+    ///
+    /// Uses the correctness-first `safe` preset — transforms that could
+    /// visually change the document (path precision loss, id mangling) are
+    /// disabled. Source maps are not supported for SVG.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SVG cannot be parsed or optimized.
+    pub fn minify_svg(&self, source: &str) -> Result<MinifyResult> {
+        minify::svg::minify(source, &self.options)
     }
 
     /// Auto-detects the format from filename extension or content and minifies accordingly.
@@ -196,9 +240,11 @@ impl Minifier {
     pub fn minify_auto(&self, source: &str, filename: Option<&str>) -> Result<MinifyResult> {
         let format = detect_format(source, filename);
         match format {
-            Format::JavaScript => self.minify_js(source),
-            Format::CSS => self.minify_css(source),
+            Format::JavaScript => minify::js::minify(source, filename, &self.options),
+            Format::CSS => minify::css::minify(source, filename, &self.options),
             Format::JSON => self.minify_json(source),
+            Format::Html => self.minify_html(source),
+            Format::Svg => self.minify_svg(source),
         }
     }
 }
@@ -209,6 +255,8 @@ enum Format {
     JavaScript,
     CSS,
     JSON,
+    Html,
+    Svg,
 }
 
 /// Detect format from content and filename
@@ -222,6 +270,12 @@ fn detect_format(source: &str, filename: Option<&str>) -> Format {
         }
         if ext.eq_ignore_ascii_case("json") {
             return Format::JSON;
+        }
+        if ext.eq_ignore_ascii_case("html") || ext.eq_ignore_ascii_case("htm") {
+            return Format::Html;
+        }
+        if ext.eq_ignore_ascii_case("svg") {
+            return Format::Svg;
         }
         if ext.eq_ignore_ascii_case("js")
             || ext.eq_ignore_ascii_case("mjs")
@@ -238,6 +292,15 @@ fn detect_format(source: &str, filename: Option<&str>) -> Format {
         if serde_json::from_str::<serde_json::Value>(source).is_ok() {
             return Format::JSON;
         }
+    }
+    // Sniff XML-ish content by the first recognizable tag.
+    let head = trimmed.get(..256).unwrap_or(trimmed);
+    let head_lower = head.to_ascii_lowercase();
+    if head_lower.starts_with("<!doctype html") || head_lower.starts_with("<html") {
+        return Format::Html;
+    }
+    if head_lower.starts_with("<svg") || head_lower.contains("<svg ") {
+        return Format::Svg;
     }
 
     // Default to JavaScript

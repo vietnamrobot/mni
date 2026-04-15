@@ -1,10 +1,10 @@
 [package]
 name = "mni"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
 authors = ["Nick Paterno <nick@epistates>"]
 license = "MIT"
-description = "A world-class minifier for JavaScript, CSS, and JSON written in Rust"
+description = "A world-class minifier for JavaScript, CSS, JSON, HTML, and SVG written in Rust"
 repository = "https://github.com/epistates/mni"
 keywords = ["minifier", "minify", "javascript", "css", "optimizer"]
 categories = ["development-tools", "parser-implementations"]
@@ -26,11 +26,28 @@ swc_core = { version = "63.1", features = [
     "ecma_transforms",
     "ecma_codegen",
     "ecma_visit",
-    "common"
+    "common",
+    "common_sourcemap"
 ] }
 
-# CSS minification - 100x faster than cssnano, powers Parcel
-lightningcss = { version = "1.0.0-alpha.71", features = ["visitor", "sourcemap"] }
+# CSS minification - 100x faster than cssnano, powers Parcel.
+# Pinned to alpha.63 for compatibility with oxvg_ast 0.0.5 (which requires the
+# `grid` feature that was removed in later alphas). Bump in lockstep when oxvg
+# upgrades.
+lightningcss = { version = "=1.0.0-alpha.63", features = ["visitor", "sourcemap"] }
+
+# Source map builder used by LightningCSS - re-exposed so we can serialize to JSON
+parcel_sourcemap = "2.1"
+
+# HTML minification
+minify-html = "0.16"
+
+# SVG minification (SVGO port with a correctness-first preset)
+oxvg_optimiser = "0.0.5"
+oxvg_ast = { version = "0.0.5", features = ["roxmltree"] }
+
+# File system watcher (for --watch)
+notify = "8.2"
 
 # Source maps - Battle-tested by Sentry
 sourcemap = "9.3"
@@ -56,6 +73,7 @@ once_cell = "1.21"
 criterion = "0.8"
 insta = "1.47"
 pretty_assertions = "1.4"
+roxmltree = "0.20"
 
 [[bench]]
 name = "minify_bench"

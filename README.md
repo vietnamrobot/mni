@@ -6,11 +6,13 @@
 [![Rust](https://img.shields.io/badge/Rust-2024-orange?logo=rust)](https://www.rust-lang.org/)
 [![Status](https://img.shields.io/badge/Status-Active-brightgreen)](https://github.com/epistates/mni)
 
-A blazing-fast, production-ready minifier for JavaScript, CSS, and JSON written in Rust.
+A blazing-fast, production-ready minifier for JavaScript, CSS, JSON, HTML, and SVG written in Rust.
 
 Built on industry-leading libraries:
 - **JavaScript**: SWC (powers Next.js, Deno, Vercel)
 - **CSS**: LightningCSS (100x faster than cssnano, powers Parcel)
+- **HTML**: minify-html (also minifies inline CSS/JS)
+- **SVG**: oxvg (Rust port of SVGO, correctness-first `safe` preset)
 - **JSON**: serde_json (Rust standard)
 
 ## Features
@@ -19,8 +21,12 @@ Built on industry-leading libraries:
 - **Blazing Fast**: SWC + LightningCSS performance (7x faster than Terser)
 - **High Compression**: 30-45% compression with correctness guarantees
 - **Safe by Default**: Conservative optimizations that never produce invalid code
-- **Multi-format**: JavaScript (ES5-ESNext), CSS, JSON
+- **Multi-format**: JavaScript (ES5-ESNext), CSS, JSON, HTML, SVG
 - **Smart Detection**: Auto-detects file format
+- **Source Maps**: JS (via SWC) and CSS (via LightningCSS)
+- **Batch Mode**: Parallel multi-file minification with `--outdir`
+- **Watch Mode**: `--watch` re-runs on filesystem changes
+- **Config Files**: `.minirc.json` partial overlay with CLI override precedence
 - **Rich CLI**: Comprehensive command-line interface
 - **Configurable**: Presets and fine-grained control
 
@@ -92,6 +98,55 @@ mni input.js \
   --passes 2 \
   --stats
 ```
+
+### Batch Mode
+
+```bash
+# Minify many files in parallel into an output directory
+mni src/a.js src/b.js src/c.css --outdir dist --source-map --stats
+
+# Disable parallelism (sequential fallback)
+mni src/*.js --outdir dist --no-parallel
+```
+
+Batch mode requires `--outdir`. Each input file is written to `<outdir>/<basename>`
+along with a sibling `.map` file when `--source-map` is enabled. Failed files are
+reported individually and the process exits non-zero if any file errored. With
+`--stats`, a per-file table of sizes/reductions/times is printed alongside totals.
+
+### Watch Mode
+
+```bash
+# Re-run minification whenever an input changes
+mni src/app.js --outdir dist --watch
+mni src/*.{js,css,html} --outdir dist --watch --source-map
+```
+
+`--watch` performs an initial build, then monitors the input files for changes
+using a platform-native filesystem watcher (via `notify`). Rebuild events are
+debounced (150ms) to coalesce bursts from editors that save in multiple steps.
+Errors during rebuilds are reported but do not stop the watcher — press Ctrl-C
+to exit.
+
+### Config File
+
+`mni` will auto-discover `.minirc.json` (or `mni.config.json`) in the current
+directory, or you can point at one explicitly with `--config <path>`. The file
+is a partial JSON overlay of `MinifyOptions` — you only specify the fields you
+want to change.
+
+```json
+{
+  "keep_fnames": true,
+  "compress_options": {
+    "drop_console": true,
+    "passes": 2
+  }
+}
+```
+
+Precedence (lowest to highest): built-in defaults → `--preset` → config file →
+explicit CLI flags. Use `--no-config` to skip auto-discovery.
 
 ## Configuration Options
 
@@ -184,6 +239,23 @@ CSS minification via LightningCSS is:
 - Calc() optimization
 - Custom property optimization
 
+### HTML (via minify-html)
+- Whitespace and comment removal
+- Attribute minification
+- Inline `<style>` minification (delegates to LightningCSS)
+- Inline `<script>` minification (delegates to minify-js)
+- DOCTYPE and optional tag omission
+
+### SVG (via oxvg — Rust SVGO port)
+Uses oxvg's correctness-first `safe` preset, which skips transformations that
+can visually change the document. Typical optimizations applied:
+- Whitespace, comment, metadata, and editor-namespace stripping
+- Shape → path conversion (`<rect>` / `<ellipse>` etc.)
+- Path data normalization and compression
+- Color minification (`#ffffff` → `#fff`, named colors)
+- Default attribute removal, useless defs/stroke/fill removal
+- Group flattening where safe
+
 ### JSON (via serde_json)
 - Whitespace removal
 - Key ordering (optional)
@@ -240,22 +312,22 @@ See [BUGS.md](./BUGS.md) for detailed information about known issues and fixes.
 Completed:
 - JavaScript minification (SWC)
 - CSS minification (LightningCSS)
+- HTML minification (minify-html, with inline CSS/JS)
+- SVG minification (oxvg `safe` preset)
 - JSON minification
 - CLI interface
 - Auto-format detection
 - Safe compression (correctness first)
+- Source map generation (JS via SWC, CSS via LightningCSS)
+- Batch file processing with `--outdir`
+- Parallel processing via rayon (disable with `--no-parallel`)
+- Per-file compression statistics comparison (`--stats` in batch mode)
+- Config file support (`.minirc.json` / `mni.config.json` / `--config`)
+- Watch mode (`--watch`) via `notify`
 - Comprehensive test suite
 
 Planned:
-- Source map generation
-- Batch file processing
-- Watch mode
-- Config file support (.minirc)
-- HTML minification
-- SVG minification
-- Parallel processing for multiple files
-- Compression statistics comparison
-- Integration with build tools
+- Integration with build tools (Vite/webpack/esbuild plugins)
 
 ## Architecture
 
